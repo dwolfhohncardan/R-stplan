@@ -2,189 +2,149 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Profi-Rüstplan | Ultra-Dark Mode & Auto-Scaling</title>
+    <title>Profi-Rüstplan | TEAM CLOUD</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <style>
-        /* Grund-Design */
-        body { background-color: #0f172a; color: #f1f5f9; }
-        
-        /* Drag & Drop Feedback */
-        .drop-target { border: 2px dashed #38bdf8 !important; background-color: rgba(56, 189, 248, 0.1) !important; }
-        
-        /* Status-Design im Dark Mode */
-        .status-eingeplant { background-color: #334155; border-left: 4px solid #94a3b8; color: #f1f5f9; }
-        .status-stoerung { background-color: #450a0a; border-left: 4px solid #ef4444; color: #fecaca; animation: pulse 1.5s infinite; }
-        .status-erledigt { background-color: #064e3b; border-left: 4px solid #10b981; color: #d1fae5; opacity: 0.8; }
-        
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-        
-        .machine-item { cursor: grab; user-select: none; }
-        
-        /* Dynamisches Scaling für die Badges */
-        .machine-badge {
-            flex: 1 1 auto;
-            min-height: 28px; /* Größer für bessere Lesbarkeit */
-            margin-bottom: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 8px;
-            border-radius: 4px;
-            transition: transform 0.1s ease;
-        }
-
-        .no-scroll-container { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-        
-        /* Scrollbars für Dark Mode */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
-        
-        #pwModal, #analysisModal { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); z-index: 100; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
-        #sidebar { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); background-color: #1e293b; }
-        .sidebar-collapsed { margin-left: -288px; }
-        
-        .locked-day { filter: brightness(0.7); }
-        .locked-day .drop-zone-area { background-color: #0f172a; cursor: not-allowed; }
-
-        @media print { .no-print { display: none !important; } #analysisModal { position: absolute !important; background: white !important; color: black !important; display: block !important; width: 100% !important; } }
+        :root { --bg-main: #0f172a; --bg-sidebar: #1e293b; }
+        body { background-color: var(--bg-main); color: #f1f5f9; }
+        .status-eingeplant { background-color: #334155; border-left: 5px solid #64748b; color: white; }
+        .status-stoerung { background-color: #7f1d1d; border-left: 5px solid #ef4444; color: #fee2e2; }
+        .status-erledigt { background-color: #064e3b; border-left: 5px solid #10b981; color: #d1fae5; }
+        #sidebar { width: 320px; transition: all 0.3s ease; position: relative; z-index: 30; border-right: 1px solid #334155; }
+        .sidebar-collapsed { transform: translateX(-100%); width: 0 !important; margin-right: -320px; }
+        main { flex-grow: 1; transition: all 0.3s ease; width: 100%; }
+        .machine-badge { min-height: 32px; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-radius: 6px; font-weight: 700; font-size: clamp(10px, 1.1vw, 14px); box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        .acc-content { display: none; }
+        .acc-active .acc-content { display: block; }
+        #pwModal, #analysisModal { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.9); z-index: 100; align-items: center; justify-content: center; backdrop-filter: blur(8px); }
+        .locked-day { filter: grayscale(0.5) brightness(0.6); pointer-events: none; }
+        .locked-day .lock-btn { pointer-events: auto !important; }
     </style>
 </head>
-<body class="h-screen overflow-hidden flex font-sans relative">
+<body class="h-screen overflow-hidden flex font-sans">
 
-    <div id="pwModal" class="no-print">
-        <div class="bg-slate-800 p-6 rounded-2xl shadow-2xl w-80 text-center border border-slate-700">
-            <h3 class="text-lg font-bold mb-4 text-white">Tag entsperren</h3>
-            <input type="password" id="pwInput" class="w-full bg-slate-900 border-2 border-slate-700 rounded-lg p-2 mb-4 outline-none focus:border-blue-500 text-white" placeholder="Passwort...">
-            <div class="flex gap-2 text-sm font-bold">
-                <button onclick="closeModal()" class="flex-1 bg-slate-700 py-2 rounded-lg hover:bg-slate-600 transition">Abbrechen</button>
-                <button onclick="checkPassword()" class="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-500 transition">Freigeben</button>
+    <div id="pwModal">
+        <div class="bg-slate-800 p-8 rounded-3xl shadow-2xl w-80 text-center border border-slate-600">
+            <h3 class="text-white font-bold mb-4 uppercase">Entsperren</h3>
+            <input type="password" id="pwInput" class="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 mb-6 outline-none text-white text-center" placeholder="Passwort...">
+            <div class="flex gap-4">
+                <button onclick="closeModal()" class="flex-1 bg-slate-700 py-2 rounded-xl text-sm">Abbruch</button>
+                <button onclick="checkPassword()" class="flex-1 bg-blue-600 py-2 rounded-xl text-sm font-bold">OK</button>
             </div>
         </div>
     </div>
 
-    <div id="analysisModal" class="p-4 overflow-y-auto">
-        <div class="bg-slate-900 rounded-3xl shadow-2xl w-full max-w-3xl p-8 relative border border-slate-700">
-            <button onclick="closeAnalysis()" class="no-print absolute top-6 right-6 text-slate-500 hover:text-white text-2xl">&times;</button>
-            <div id="printArea">
-                <div class="border-b-2 border-blue-500 pb-4 mb-6 flex justify-between items-end">
-                    <div>
-                        <h2 id="analysisHeader" class="text-3xl font-black text-white uppercase italic leading-none">KI-Analyse</h2>
-                        <p id="analysisWeekInfo" class="text-blue-400 font-bold uppercase tracking-widest text-xs mt-2"></p>
+    <aside id="sidebar" class="bg-[#1e293b] flex flex-col no-print">
+        <div class="p-6 flex items-center justify-between border-b border-slate-700">
+            <h2 class="text-white font-black text-2xl italic uppercase tracking-tighter">TEAM-PLAN</h2>
+            <button onclick="toggleSidebar()" class="text-slate-500 hover:text-white text-2xl">«</button>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+            <div class="border-b border-slate-800 acc-active" id="accKW">
+                <button onclick="toggleAccordion('accKW')" class="w-full p-4 flex justify-between items-center text-xs font-bold text-slate-500 uppercase"><span>Woche</span><span>▼</span></button>
+                <div class="acc-content p-4">
+                    <div class="bg-slate-900 p-4 rounded-2xl border border-slate-700 text-center">
+                        <div class="flex items-center justify-between text-white mb-4">
+                            <button onclick="changeWeek(-1)" class="text-xl">◀</button>
+                            <span id="weekDisplay" class="text-2xl font-black italic">KW --</span>
+                            <button onclick="changeWeek(1)" class="text-xl">▶</button>
+                        </div>
+                        <button onclick="goToCurrentWeek()" class="w-full text-[10px] bg-blue-600/20 text-blue-400 py-2 rounded-xl font-black border border-blue-500/30 uppercase">Heute</button>
                     </div>
-                    <div class="no-print flex bg-slate-800 p-1 rounded-xl">
-                        <button id="btnWeekMode" onclick="toggleAnalysisMode('week')" class="px-4 py-1.5 text-[10px] font-black rounded-lg bg-blue-600 text-white shadow-lg">KW</button>
-                        <button id="btnGlobalMode" onclick="toggleAnalysisMode('global')" class="px-4 py-1.5 text-[10px] font-black rounded-lg text-slate-400 ml-1">HISTORIE</button>
-                    </div>
-                </div>
-                <div class="mb-8 p-5 bg-blue-900/20 border-l-4 border-blue-500 rounded-r-xl">
-                    <p id="aiSummaryText" class="text-blue-100 text-sm italic leading-relaxed"></p>
-                </div>
-                <div class="grid grid-cols-2 gap-10">
-                    <div class="space-y-8">
-                        <section><h3 class="text-[10px] font-black text-slate-500 uppercase mb-4 tracking-widest">Status-Check</h3><div id="statusStats" class="space-y-3"></div></section>
-                        <section><h3 class="text-[10px] font-black text-slate-500 uppercase mb-4 tracking-widest">Top Anlagen</h3><div id="machineStats" class="space-y-2 text-sm"></div></section>
-                    </div>
-                    <section><h3 class="text-[10px] font-black text-slate-500 uppercase mb-4 tracking-widest">Mitarbeiter-Ranking</h3><div id="staffStats" class="space-y-4"></div></section>
                 </div>
             </div>
-            <div class="mt-10 flex gap-4 no-print font-bold">
-                <button onclick="window.print()" class="flex-1 bg-white text-slate-900 py-3 rounded-xl hover:bg-slate-200 transition">PDF EXPORT</button>
-                <button onclick="closeAnalysis()" class="flex-1 bg-slate-800 text-white py-3 rounded-xl hover:bg-slate-700 transition border border-slate-600">SCHLIESSEN</button>
-            </div>
-        </div>
-    </div>
-
-    <aside id="sidebar" class="w-72 p-5 flex flex-col shadow-2xl shrink-0 z-20 no-print border-r border-slate-800">
-        <div class="flex items-center justify-between mb-8 border-b border-slate-700 pb-4">
-            <h2 class="text-white font-black text-2xl italic uppercase tracking-tighter">Rüstplan</h2>
-            <button onclick="toggleSidebar()" class="text-slate-500 hover:text-white transition-transform hover:rotate-180"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" /></svg></button>
-        </div>
-        
-        <div class="mb-8 bg-slate-900/50 p-4 rounded-2xl border border-slate-700 shadow-inner">
-            <div class="flex items-center justify-between text-white">
-                <button onclick="changeWeek(-1)" class="text-2xl hover:text-blue-400">◀</button>
-                <div class="text-center">
-                    <span id="weekDisplay" class="text-2xl font-black italic">KW --</span>
-                    <div id="yearDisplay" class="text-[10px] text-slate-500 uppercase font-bold mt-1 tracking-widest leading-none">----</div>
+            <div class="p-4"><button onclick="openAnalysis()" class="w-full bg-white text-slate-900 py-3 rounded-2xl font-black uppercase text-xs">📊 Analyse</button></div>
+            <div class="border-b border-slate-800" id="accPers">
+                <button onclick="toggleAccordion('accPers')" class="w-full p-4 flex justify-between items-center text-xs font-bold text-slate-500 uppercase"><span>Personal</span><span>▼</span></button>
+                <div class="acc-content p-4">
+                    <div class="flex gap-2 mb-4"><input type="text" id="staffInput" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none"><button onclick="addStaffMember()" class="bg-blue-600 px-3 rounded-xl font-bold">+</button></div>
+                    <div id="staffList" class="flex flex-wrap gap-2"></div>
                 </div>
-                <button onclick="changeWeek(1)" class="text-2xl hover:text-blue-400">▶</button>
             </div>
-            <button onclick="goToCurrentWeek()" class="w-full mt-4 text-[10px] bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white py-2 rounded-xl font-black uppercase transition-all border border-blue-500/30">Zurück zu Heute</button>
-        </div>
-
-        <button onclick="openAnalysis()" class="mb-10 w-full bg-white text-slate-900 py-3 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-blue-400 hover:text-white transition-all shadow-lg active:scale-95">📊 KI-ANALYSE</button>
-
-        <div class="mb-8">
-            <label class="text-[10px] text-slate-500 uppercase font-black mb-2 block tracking-widest text-center">Personal</label>
-            <div class="flex gap-2 mb-3">
-                <input type="text" id="staffInput" placeholder="Name..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500">
-                <button onclick="addStaffMember()" class="bg-slate-700 text-white px-3 py-2 rounded-xl font-bold hover:bg-blue-600 transition-colors">+</button>
+            <div class="border-b border-slate-800 acc-active" id="accMach">
+                <button onclick="toggleAccordion('accMach')" class="w-full p-4 flex justify-between items-center text-xs font-bold text-slate-500 uppercase"><span>Pool</span><span>▼</span></button>
+                <div class="acc-content p-4">
+                    <div class="flex gap-2 mb-4"><input type="text" id="machineInput" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white outline-none"><button onclick="addMachineToPool()" class="bg-blue-600 px-3 rounded-xl font-bold">+</button></div>
+                    <div id="pool" class="space-y-2"></div>
+                </div>
             </div>
-            <div id="staffList" class="flex flex-wrap gap-2"></div>
-        </div>
-
-        <div class="border-t border-slate-800 pt-6 flex-1 flex flex-col min-h-0">
-            <label class="text-[10px] text-slate-500 uppercase font-black mb-2 block tracking-widest text-center">Maschinen-Pool</label>
-            <div class="flex gap-2 mb-4">
-                <input type="text" id="machineInput" placeholder="Name..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-blue-500">
-                <button onclick="addMachineToPool()" class="bg-slate-700 text-white px-3 py-2 rounded-xl font-bold hover:bg-blue-600 transition-colors">+</button>
-            </div>
-            <div id="pool" class="space-y-2 overflow-y-auto pr-2"></div>
         </div>
     </aside>
 
-    <button id="sidebarToggle" onclick="toggleSidebar()" class="fixed left-0 top-10 bg-slate-800 text-white p-3 rounded-r-2xl shadow-2xl z-10 hidden hover:bg-blue-600 no-print transition-all">▶</button>
-    
-    <main class="flex-1 p-6 grid grid-cols-5 gap-4 overflow-hidden no-print bg-[#0f172a]"></main>
+    <button id="sidebarToggle" onclick="toggleSidebar()" class="fixed left-0 top-10 bg-slate-800 text-white p-3 rounded-r-2xl z-10 hidden">▶</button>
+    <main class="p-6 grid grid-cols-5 gap-4 overflow-hidden bg-[#0f172a]"></main>
+
+    <div id="analysisModal">
+        <div class="bg-slate-900 rounded-[2rem] shadow-2xl w-full max-w-4xl p-10 relative border border-slate-700">
+            <button onclick="closeAnalysis()" class="absolute top-8 right-8 text-slate-500 text-3xl">&times;</button>
+            <div id="printArea">
+                <h2 class="text-3xl font-black uppercase italic border-b-4 border-blue-500 pb-4 mb-6">KI-Analyse</h2>
+                <div id="aiSummaryBox" class="mb-8 p-6 bg-blue-900/30 rounded-2xl italic text-blue-100"></div>
+                <div class="grid grid-cols-2 gap-8" id="statsGrid">
+                    <div id="statusStats" class="space-y-3"></div>
+                    <div id="staffStats" class="space-y-4"></div>
+                </div>
+            </div>
+            <button onclick="closeAnalysis()" class="mt-8 w-full bg-slate-800 text-white py-4 rounded-2xl font-black">SCHLIESSEN</button>
+        </div>
+    </div>
 
     <script>
-        const days = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"];
-        let staff, machines, plan, lockedDays, currentYear, currentWeek, dayToUnlock = "", analysisMode = "week";
+        const firebaseConfig = {
+            apiKey: "AIzaSyCON4ZaGQ8FDTn_jyvUWQWJJPo3dWX8njw",
+            authDomain: "ruestplan-zerspanung.firebaseapp.com",
+            databaseURL: "https://ruestplan-zerspanung-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "ruestplan-zerspanung",
+            storageBucket: "ruestplan-zerspanung.firebasestorage.app",
+            messagingSenderId: "1048791364923",
+            appId: "1:1048791364923:web:f7b03dcfe24c96fca8731e"
+        };
 
-        function getWeek(d) {
-            d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-            d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));
-            return Math.ceil((((d - new Date(Date.UTC(d.getUTCFullYear(),0,1))) / 86400000) + 1)/7);
-        }
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const days = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"];
+        let staff = [], machines = [], plan = {}, lockedDays = {}, currentYear, currentWeek, dayToUnlock = "";
 
         function initApp() {
-            const now = new Date();
-            currentYear = now.getFullYear(); currentWeek = getWeek(now);
-            staff = JSON.parse(localStorage.getItem('rustplan_staff')) || ["Lange", "Saric", "Ederle"];
-            machines = JSON.parse(localStorage.getItem('rustplan_machines')) || ["Maschine 1", "Maschine 2", "Maschine 3"];
-            loadWeek();
+            const now = new Date(); currentYear = now.getFullYear(); currentWeek = getWeek(now);
+            db.ref('config').on('value', snap => {
+                const d = snap.val() || {};
+                staff = d.staff || ["Lange", "Saric", "Ederle", "Oks"];
+                machines = d.machines || ["Integrex", "Ergo 260CL"];
+                loadWeekData();
+            });
         }
 
-        function loadWeek() {
-            plan = JSON.parse(localStorage.getItem(`plan-${currentYear}-W${currentWeek}`)) || {};
-            lockedDays = JSON.parse(localStorage.getItem(`lock-${currentYear}-W${currentWeek}`)) || {};
-            document.getElementById('weekDisplay').innerText = `KW ${currentWeek.toString().padStart(2, '0')}`;
-            document.getElementById('yearDisplay').innerText = `JAHR ${currentYear}`;
-            render();
+        function loadWeekData() {
+            db.ref(`plans/${currentYear}/KW${currentWeek}`).on('value', snap => {
+                const d = snap.val() || {};
+                plan = d.entries || {}; lockedDays = d.locks || {};
+                document.getElementById('weekDisplay').innerText = `KW ${currentWeek}`;
+                render();
+            });
+        }
+
+        function save() {
+            db.ref(`plans/${currentYear}/KW${currentWeek}`).update({ entries: plan, locks: lockedDays });
+            db.ref('config').update({ staff, machines });
         }
 
         function render() {
             const main = document.querySelector('main'); main.innerHTML = '';
             const colors = ["border-indigo-500", "border-emerald-500", "border-amber-500", "border-rose-500", "border-cyan-500"];
-            
             days.forEach(day => {
                 const isLocked = lockedDays[day];
-                const col = document.createElement('div');
-                col.className = `flex flex-col gap-3 h-full min-h-0 ${isLocked ? 'locked-day' : ''}`;
-                col.innerHTML = `
-                    <div class="bg-slate-800/50 text-slate-400 font-black p-2 flex items-center justify-between rounded-xl uppercase text-[10px] tracking-widest shadow-lg border border-slate-700/50">
-                        <span>${day}</span>
-                        <button onclick="handleLock('${day}')" class="transition-transform hover:scale-125">${isLocked ? '🔒' : '🔓'}</button>
-                    </div>`;
-                
+                const col = document.createElement('div'); col.className = `flex flex-col gap-3 h-full min-h-0 ${isLocked ? 'locked-day' : ''}`;
+                col.innerHTML = `<div class="bg-slate-800/70 text-slate-400 font-black p-2 flex items-center justify-between rounded-xl uppercase text-[10px] border border-slate-700/50"><span>${day}</span><button onclick="handleLock('${day}')" class="lock-btn">${isLocked ? '🔒' : '🔓'}</button></div>`;
                 staff.forEach((person, idx) => {
                     const key = `${day}-${person}`;
                     const slot = document.createElement('div');
-                    slot.className = `flex-1 bg-slate-900/40 border-l-4 ${colors[idx % colors.length]} rounded-xl shadow-lg p-2.5 flex flex-col min-h-0 drop-zone-area overflow-hidden relative border border-slate-800/50`;
+                    slot.className = `flex-1 bg-slate-900/40 border-l-4 ${colors[idx % colors.length]} rounded-xl p-3 flex flex-col min-h-0 drop-zone-area overflow-hidden relative border border-slate-800/50`;
                     if (!isLocked) { slot.setAttribute('ondrop', 'drop(event)'); slot.setAttribute('ondragover', 'event.preventDefault()'); }
                     slot.setAttribute('data-key', key);
-                    slot.innerHTML = `<div class="text-[9px] font-black text-slate-500 mb-2 uppercase truncate opacity-70 tracking-widest">${person}</div><div id="${key}" class="no-scroll-container"></div>`;
+                    slot.innerHTML = `<div class="text-[10px] font-black text-slate-500 mb-2 uppercase opacity-60">${person}</div><div id="${key}" class="no-scroll-container"></div>`;
                     col.appendChild(slot);
                 });
                 main.appendChild(col);
@@ -194,123 +154,45 @@
 
         function draw() {
             document.querySelectorAll('[data-key]').forEach(el => {
-                const key = el.getAttribute('data-key');
-                const container = document.getElementById(key); if (!container) return;
+                const key = el.getAttribute('data-key'), container = document.getElementById(key);
                 container.innerHTML = '';
-                const items = plan[key] || [];
-                
-                // Dynamische Schriftgrößen-Logik für Dark Mode
-                let fontSize = "11px";
-                if(items.length > 5) fontSize = "10px";
-                if(items.length > 8) fontSize = "9px";
-
-                items.forEach((m, idx) => {
-                    const b = document.createElement('div');
-                    b.className = `machine-badge status-${m.status} shadow-md cursor-pointer hover:brightness-125 transition-all`;
-                    b.style.fontSize = fontSize;
-                    b.innerHTML = `<span class="truncate pr-1 font-bold leading-none flex-1 py-1" onclick="toggleStatus('${key}', ${idx})">${m.name}</span>
-                        ${!lockedDays[key.split('-')[0]] ? `<span onclick="removeFromPlan('${key}', ${idx})" class="hover:text-white transition-colors w-4 h-4 flex items-center justify-center text-lg font-light">×</span>` : ''}`;
+                (plan[key] || []).forEach((m, idx) => {
+                    const b = document.createElement('div'); b.className = `machine-badge status-${m.status} shadow-xl cursor-pointer hover:brightness-125`;
+                    b.innerHTML = `<span class="truncate flex-1 py-1" onclick="toggleStatus('${key}', ${idx})">${m.name}</span>${!lockedDays[key.split('-')[0]] ? `<span onclick="removeFromPlan('${key}', ${idx})" class="w-5 h-5 flex items-center justify-center text-lg">×</span>` : ''}`;
                     container.appendChild(b);
                 });
             });
         }
 
-        // --- KI ENGINE ---
-        function getStats(mode) {
-            let s = { status: { erledigt: 0, stoerung: 0, eingeplant: 0 }, machines: {}, staff: {}, total: 0, weeks: 0 };
-            if (mode === 'week') { processStats(plan, s); s.weeks = 1; }
-            else {
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    if (key.startsWith('plan-')) { processStats(JSON.parse(localStorage.getItem(key)), s); s.weeks++; }
-                }
-            }
-            return s;
-        }
-
-        function processStats(data, s) {
-            Object.entries(data).forEach(([key, items]) => {
-                const sName = key.split('-')[1];
-                items.forEach(m => {
-                    s.status[m.status]++;
-                    s.machines[m.name] = (s.machines[m.name] || 0) + 1;
-                    s.staff[sName] = (s.staff[sName] || 0) + 1;
-                    s.total++;
-                });
-            });
-        }
-
-        function openAnalysis() {
-            const stats = getStats(analysisMode);
-            document.getElementById('analysisWeekInfo').innerText = analysisMode === 'week' ? `Kalenderwoche ${currentWeek}` : `Gesamtauswertung: ${stats.weeks} Wochen`;
-            
-            let aiText = `Bericht: **${stats.total} Vorgänge** dokumentiert. `;
-            if(stats.total > 0) {
-                const topP = Object.entries(stats.staff).sort((a,b)=>b[1]-a[1])[0];
-                const q = ((stats.status.erledigt/stats.total)*100).toFixed(0);
-                aiText += `Abschlussquote bei **${q}%**. `;
-                if(topP) aiText += `Aktivster Mitarbeiter: **${topP[0]}**. `;
-                if(stats.status.stoerung > 0) aiText += `<span class="text-red-400">Handlungsbedarf bei ${stats.status.stoerung} Störungen.</span>`;
-            } else { aiText = "Keine Daten verfügbar."; }
-            document.getElementById('aiSummaryText').innerHTML = aiText;
-
-            document.getElementById('statusStats').innerHTML = `
-                <div class="flex justify-between bg-slate-800 p-2 rounded-lg"><span class="text-emerald-400">ERLEDIGT</span><b>${stats.status.erledigt}</b></div>
-                <div class="flex justify-between bg-slate-800 p-2 rounded-lg text-red-400"><span>STÖRUNG</span><b>${stats.status.stoerung}</b></div>
-                <div class="flex justify-between bg-slate-800 p-2 rounded-lg text-slate-400"><span>GEPLANT</span><b>${stats.status.eingeplant}</b></div>`;
-
-            document.getElementById('machineStats').innerHTML = Object.entries(stats.machines).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([n,c])=>`<div class="flex justify-between text-slate-300 border-b border-slate-800 pb-1"><span>${n}</span><b>${c}x</b></div>`).join('') || '-';
-
-            document.getElementById('staffStats').innerHTML = staff.map(n => {
-                const c = stats.staff[n] || 0;
-                const p = stats.total > 0 ? (c/stats.total*100) : 0;
-                return `<div class="mb-4"><div class="flex justify-between text-[11px] font-bold text-slate-400"><span>${n}</span><span>${c}</span></div><div class="w-full bg-slate-800 h-2 rounded-full mt-1 overflow-hidden"><div class="bg-blue-500 h-full transition-all duration-700" style="width:${p}%"></div></div></div>`;
-            }).join('');
-            document.getElementById('analysisModal').style.display = 'flex';
-        }
-
-        // --- UI & LOGIC HELPERS ---
-        function toggleAnalysisMode(m) {
-            analysisMode = m;
-            document.getElementById('btnWeekMode').className = m === 'week' ? "px-4 py-1.5 text-[10px] font-black rounded-lg bg-blue-600 text-white shadow-lg" : "px-4 py-1.5 text-[10px] font-black rounded-lg text-slate-400 ml-1";
-            document.getElementById('btnGlobalMode').className = m === 'global' ? "px-4 py-1.5 text-[10px] font-black rounded-lg bg-blue-600 text-white shadow-lg ml-1" : "px-4 py-1.5 text-[10px] font-black rounded-lg text-slate-400 ml-1";
-            openAnalysis();
-        }
-        function closeAnalysis() { document.getElementById('analysisModal').style.display = 'none'; }
-        function handleLock(day) {
-            if (lockedDays[day]) { dayToUnlock = day; document.getElementById('pwModal').style.display = 'flex'; document.getElementById('pwInput').focus(); }
-            else { if (confirm(`${day} fixieren?`)) { lockedDays[day] = true; save(); } }
-        }
-        function checkPassword() { if (document.getElementById('pwInput').value === "Gelenkwelle") { lockedDays[dayToUnlock] = false; save(); closeModal(); } else { alert("Falsch!"); document.getElementById('pwInput').value = ''; } }
-        function closeModal() { document.getElementById('pwModal').style.display = 'none'; document.getElementById('pwInput').value = ''; }
-        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('sidebar-collapsed'); document.getElementById('sidebarToggle').classList.toggle('hidden'); }
-        function save() {
-            localStorage.setItem(`plan-${currentYear}-W${currentWeek}`, JSON.stringify(plan));
-            localStorage.setItem(`lock-${currentYear}-W${currentWeek}`, JSON.stringify(lockedDays));
-            localStorage.setItem('rustplan_staff', JSON.stringify(staff));
-            localStorage.setItem('rustplan_machines', JSON.stringify(machines));
-            render();
-        }
-        function changeWeek(dir) { currentWeek += dir; if (currentWeek > 52) { currentWeek = 1; currentYear++; } if (currentWeek < 1) { currentWeek = 52; currentYear--; } loadWeek(); }
-        function goToCurrentWeek() { const n = new Date(); currentYear = n.getFullYear(); currentWeek = getWeek(n); loadWeek(); }
-        function addStaffMember() { const v = document.getElementById('staffInput').value.trim(); if (v && !staff.includes(v)) { staff.push(v); save(); document.getElementById('staffInput').value = ''; } }
-        function removeStaffMember(n) { if(confirm(`Personal "${n}" löschen?`)) { staff = staff.filter(s => s !== n); save(); } }
-        function addMachineToPool() { const v = document.getElementById('machineInput').value.trim(); if (v && !machines.includes(v)) { machines.push(v); save(); document.getElementById('machineInput').value = ''; } }
-        function removeMachineFromPool(n) { if(confirm(`Maschine "${n}" löschen?`)) { machines = machines.filter(m => m !== n); save(); } }
-        function renderStaff() { document.getElementById('staffList').innerHTML = staff.map(n => `<div class="bg-slate-800 text-slate-300 px-3 py-1 rounded-lg text-[9px] flex items-center gap-2 border border-slate-700 font-bold">${n} <button onclick="removeStaffMember('${n}')" class="text-red-500 hover:text-white transition-colors">×</button></div>`).join(''); }
-        function renderPool() { document.getElementById('pool').innerHTML = machines.map(m => `<div draggable="true" ondragstart="event.dataTransfer.setData('text', event.target.dataset.name)" data-name="${m}" class="machine-item bg-slate-800 p-2.5 rounded-xl border border-slate-700 hover:border-blue-500 text-white text-[11px] font-bold flex justify-between items-center group shadow-md transition-all"><span>⚙️ ${m}</span><button onclick="removeMachineFromPool('${m}')" class="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity ml-2 text-xl">×</button></div>`).join(''); }
         function drop(ev) {
-            ev.preventDefault(); let dz = ev.target.closest('[data-key]'); if (!dz) return;
-            let mName = ev.dataTransfer.getData("text"); let key = dz.getAttribute("data-key");
+            ev.preventDefault(); let dz = ev.target.closest('[data-key]'), mName = ev.dataTransfer.getData("text"), key = dz.getAttribute("data-key");
             if (!plan[key]) plan[key] = []; plan[key].push({ name: mName, status: 'eingeplant' }); save();
         }
-        function toggleStatus(key, index) {
-            const states = ['eingeplant', 'stoerung', 'erledigt'];
-            plan[key][index].status = states[(states.indexOf(plan[key][index].status) + 1) % 3];
-            save();
+        function toggleStatus(key, index) { const s = ['eingeplant', 'stoerung', 'erledigt']; plan[key][index].status = s[(s.indexOf(plan[key][index].status)+1)%3]; save(); }
+        function removeFromPlan(key, idx) { plan[key].splice(idx, 1); save(); }
+        function handleLock(day) { if (lockedDays[day]) { dayToUnlock = day; document.getElementById('pwModal').style.display = 'flex'; document.getElementById('pwInput').focus(); } else { if (confirm(`${day} fixieren?`)) { lockedDays[day] = true; save(); } } }
+        function checkPassword() { if (document.getElementById('pwInput').value === "Gelenkwelle") { lockedDays[dayToUnlock] = false; save(); closeModal(); } else { alert("Falsch!"); } }
+        function closeModal() { document.getElementById('pwModal').style.display = 'none'; document.getElementById('pwInput').value = ''; }
+        function toggleSidebar() { document.getElementById('sidebar').classList.toggle('sidebar-collapsed'); document.getElementById('sidebarToggle').classList.toggle('hidden'); }
+        function toggleAccordion(id) { document.getElementById(id).classList.toggle('acc-active'); }
+        function changeWeek(dir) { currentWeek += dir; loadWeekData(); }
+        function goToCurrentWeek() { const n = new Date(); currentYear = n.getFullYear(); currentWeek = getWeek(n); loadWeekData(); }
+        function addStaffMember() { const v = document.getElementById('staffInput').value.trim(); if (v && !staff.includes(v)) { staff.push(v); save(); document.getElementById('staffInput').value = ''; } }
+        function removeStaffMember(n) { if(confirm(`${n} löschen?`)) { staff = staff.filter(s => s !== n); save(); } }
+        function addMachineToPool() { const v = document.getElementById('machineInput').value.trim(); if (v && !machines.includes(v)) { machines.push(v); save(); document.getElementById('machineInput').value = ''; } }
+        function removeMachineFromPool(n) { if(confirm(`${n} löschen?`)) { machines = machines.filter(m => m !== n); save(); } }
+        function renderStaff() { document.getElementById('staffList').innerHTML = staff.map(n => `<div class="bg-slate-800 text-slate-300 px-2 py-1 rounded-lg text-[10px] border border-slate-700 font-bold">${n}<button onclick="removeStaffMember('${n}')" class="text-red-500 ml-1">×</button></div>`).join(''); }
+        function renderPool() { document.getElementById('pool').innerHTML = machines.map(m => `<div draggable="true" ondragstart="event.dataTransfer.setData('text', event.target.dataset.name)" data-name="${m}" class="bg-slate-800 p-3 rounded-xl border border-slate-700 hover:border-blue-500 text-white text-xs font-bold flex justify-between items-center group shadow-md italic"><span>⚙️ ${m}</span><button onclick="removeMachineFromPool('${m}')" class="text-slate-500 hover:text-red-500 text-xl">×</button></div>`).join(''); }
+        function openAnalysis() {
+            let s = { status: { erledigt: 0, stoerung: 0, eingeplant: 0 }, machines: {}, staff: {}, total: 0 };
+            Object.entries(plan).forEach(([k, items]) => { const sn = k.split('-')[1]; items.forEach(m => { s.status[m.status]++; s.machines[m.name] = (s.machines[m.name]||0)+1; s.staff[sn] = (s.staff[sn]||0)+1; s.total++; }); });
+            document.getElementById('aiSummaryBox').innerHTML = s.total > 0 ? `Erfolgsquote: **${((s.status.erledigt/s.total)*100).toFixed(0)}%**. Top-Maschine: **${Object.entries(s.machines).sort((a,b)=>b[1]-a[1])[0][0]}**.` : "Keine Daten.";
+            document.getElementById('statusStats').innerHTML = `<div class="bg-emerald-900/40 p-3 rounded-xl text-emerald-400 flex justify-between"><span>OK</span><b>${s.status.erledigt}</b></div><div class="bg-red-900/40 p-3 rounded-xl text-red-400 flex justify-between"><span>STOP</span><b>${s.status.stoerung}</b></div>`;
+            document.getElementById('staffStats').innerHTML = staff.map(n => { const c = s.staff[n]||0, p = s.total > 0 ? (c/s.total*100) : 0; return `<div class="mb-2"><div class="flex justify-between text-[10px] text-slate-400"><span>${n}</span><span>${c}</span></div><div class="bg-slate-800 h-1 rounded-full"><div class="bg-blue-500 h-full" style="width:${p}%"></div></div></div>`; }).join('');
+            document.getElementById('analysisModal').style.display = 'flex';
         }
-        function removeFromPlan(key, index) { plan[key].splice(index, 1); save(); }
-
+        function closeAnalysis() { document.getElementById('analysisModal').style.display = 'none'; }
+        function getWeek(d) { d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7)); return Math.ceil((((d - new Date(Date.UTC(d.getUTCFullYear(),0,1))) / 86400000) + 1)/7); }
         window.onload = initApp;
     </script>
 </body>
